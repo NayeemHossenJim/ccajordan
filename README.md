@@ -101,3 +101,5 @@ The API server exists for programmatic triggers, but it still executes the same 
 - Default Apollo base URL should be set to <https://api.apollo.io/api/v1> for the two-step flow endpoints.
 - Apollo flow is docs-aligned: People API Search discovers candidate IDs, then People Enrichment/Bulk People Enrichment resolves contact emails.
 - OpenAI is used for niche matching and email generation/revision. Fallback logic is included for resilience.
+- Reply monitoring uses IMAP. For Gmail, enable IMAP in mailbox settings and use an App Password (not your account password).
+- `SMTP_ACCOUNTS` supports optional IMAP-specific fields per account: `imap_host`, `imap_port`, `imap_username`, `imap_password`.

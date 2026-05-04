@@ -43,9 +43,11 @@ class ReplyMonitor:
         for acct in self._accounts:
             label = acct.get("label", "Unknown")
             from_email = acct.get("from_email", "")
+            username = str(acct.get("imap_username") or acct.get("username", ""))
+            password = str(acct.get("imap_password") or acct.get("password", ""))
 
             # Skip placeholder accounts
-            if "your-email" in acct.get("username", "") or "your-app-password" in acct.get("password", ""):
+            if "your-email" in username or "your-app-password" in password:
                 logger.debug("Skipping placeholder account: %s", label)
                 counts["accounts_skipped"] += 1
                 continue
@@ -56,7 +58,17 @@ class ReplyMonitor:
                 counts["replies_found"] += found
                 self.save_last_check(from_email)
             except Exception as exc:
-                logger.warning("Failed to check inbox for %s (%s): %s", label, from_email, exc)
+                message = str(exc)
+                if "AUTHENTICATIONFAILED" in message.upper():
+                    logger.warning(
+                        "Failed to check inbox for %s (%s): %s. "
+                        "For Gmail, use an App Password and ensure IMAP access is enabled.",
+                        label,
+                        from_email,
+                        exc,
+                    )
+                else:
+                    logger.warning("Failed to check inbox for %s (%s): %s", label, from_email, exc)
                 counts["accounts_skipped"] += 1
 
         if counts["replies_found"]:
@@ -68,8 +80,8 @@ class ReplyMonitor:
         """Check a single IMAP inbox. Returns number of replies found."""
         imap_host = acct.get("imap_host") or self._derive_imap_host(acct["host"])
         imap_port = int(acct.get("imap_port", 993))
-        username = acct["username"]
-        password = acct["password"]
+        username = acct.get("imap_username") or acct["username"]
+        password = acct.get("imap_password") or acct["password"]
         label = acct.get("label", username)
 
         # Get last check timestamp for this account

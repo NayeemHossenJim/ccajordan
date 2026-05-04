@@ -57,6 +57,29 @@ def _env_csv(name: str, default: Tuple[str, ...]) -> Tuple[str, ...]:
     return normalized
 
 
+def _strip_wrapping_quotes(value: str) -> str:
+    trimmed = value.strip()
+    if len(trimmed) >= 2 and trimmed[0] == trimmed[-1] and trimmed[0] in {"'", '"'}:
+        return trimmed[1:-1].strip()
+    return trimmed
+
+
+def _normalize_mail_username(username: str) -> str:
+    return _strip_wrapping_quotes(username)
+
+
+def _normalize_mail_password(host: str, password: str) -> str:
+    normalized = _strip_wrapping_quotes(password)
+    # Gmail app passwords are often copied with spaces (xxxx xxxx xxxx xxxx).
+    if "gmail.com" in host.lower():
+        normalized = normalized.replace(" ", "")
+    return normalized
+
+
+def _normalize_mail_credentials(host: str, username: str, password: str) -> Tuple[str, str]:
+    return _normalize_mail_username(username), _normalize_mail_password(host, password)
+
+
 @dataclass(frozen=True)
 class Settings:
     google_service_account_json: str
@@ -95,6 +118,12 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        smtp_host = _env_required("SMTP_HOST").strip()
+        smtp_username, smtp_password = _normalize_mail_credentials(
+            smtp_host,
+            _env_required("SMTP_USERNAME"),
+            _env_required("SMTP_PASSWORD"),
+        )
         return cls(
             google_service_account_json=_env_required("GOOGLE_SERVICE_ACCOUNT_JSON"),
             creators_spreadsheet_id=_env_required("CREATORS_SPREADSHEET_ID"),
@@ -122,10 +151,10 @@ class Settings:
             slack_approval_channel_id=_env_required("SLACK_APPROVAL_CHANNEL_ID"),
             slack_approval_timeout_minutes=_env_int("SLACK_APPROVAL_TIMEOUT_MINUTES", 120),
             slack_poll_interval_seconds=_env_int("SLACK_POLL_INTERVAL_SECONDS", 20),
-            smtp_host=_env_required("SMTP_HOST"),
+            smtp_host=smtp_host,
             smtp_port=_env_int("SMTP_PORT", 587),
-            smtp_username=_env_required("SMTP_USERNAME"),
-            smtp_password=_env_required("SMTP_PASSWORD"),
+            smtp_username=smtp_username,
+            smtp_password=smtp_password,
             smtp_from_email=_env_required("SMTP_FROM_EMAIL"),
             smtp_use_tls=_env_bool("SMTP_USE_TLS", True),
             smtp_accounts=_parse_smtp_accounts(),
@@ -150,8 +179,35 @@ def _parse_smtp_accounts() -> List[dict]:
     if not isinstance(accounts, list):
         raise ValueError("SMTP_ACCOUNTS must be a JSON array")
     required_keys = {"label", "host", "port", "username", "password", "from_email"}
+    normalized_accounts = []
     for idx, acct in enumerate(accounts):
+        if not isinstance(acct, dict):
+            raise ValueError(f"SMTP_ACCOUNTS[{idx}] must be a JSON object")
         missing = required_keys - set(acct.keys())
         if missing:
             raise ValueError(f"SMTP_ACCOUNTS[{idx}] missing keys: {missing}")
-    return accounts
+
+        host = str(acct["host"]).strip()
+        username, password = _normalize_mail_credentials(
+            host=host,
+            username=str(acct["username"]),
+            password=str(acct["password"]),
+        )
+
+        normalized = dict(acct)
+        normalized["host"] = host
+        normalized["username"] = username
+        normalized["password"] = password
+
+        if normalized.get("imap_host") is not None:
+            normalized["imap_host"] = str(normalized["imap_host"]).strip()
+        imap_host = str(normalized.get("imap_host") or host)
+
+        if normalized.get("imap_username") is not None:
+            normalized["imap_username"] = _normalize_mail_username(str(normalized["imap_username"]))
+        if normalized.get("imap_password") is not None:
+            normalized["imap_password"] = _normalize_mail_password(imap_host, str(normalized["imap_password"]))
+
+        normalized_accounts.append(normalized)
+
+    return normalized_accounts
