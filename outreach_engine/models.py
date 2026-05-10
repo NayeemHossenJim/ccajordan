@@ -17,6 +17,13 @@ class Creator:
 
 
 @dataclass(frozen=True)
+class CreatorEmailTemplate:
+    creator_name: str
+    subject: str
+    body: str
+
+
+@dataclass(frozen=True)
 class RSSFeed:
     feed_url: str
 

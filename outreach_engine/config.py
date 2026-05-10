@@ -86,6 +86,8 @@ class Settings:
     creators_spreadsheet_id: str
     creators_worksheet: str
     rss_worksheet: str
+    email_formats_spreadsheet_id: str
+    email_formats_worksheet_gid: int
     openai_api_key: str
     openai_model: str
     apollo_api_key: str
@@ -118,6 +120,11 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        creators_spreadsheet_id = _env_required("CREATORS_SPREADSHEET_ID").strip()
+        email_formats_spreadsheet_id = os.getenv("EMAIL_FORMATS_SPREADSHEET_ID", creators_spreadsheet_id).strip()
+        if not email_formats_spreadsheet_id:
+            email_formats_spreadsheet_id = creators_spreadsheet_id
+
         smtp_host = _env_required("SMTP_HOST").strip()
         smtp_username, smtp_password = _normalize_mail_credentials(
             smtp_host,
@@ -126,9 +133,11 @@ class Settings:
         )
         return cls(
             google_service_account_json=_env_required("GOOGLE_SERVICE_ACCOUNT_JSON"),
-            creators_spreadsheet_id=_env_required("CREATORS_SPREADSHEET_ID"),
+            creators_spreadsheet_id=creators_spreadsheet_id,
             creators_worksheet=os.getenv("CREATORS_WORKSHEET", "creators"),
             rss_worksheet=os.getenv("RSS_WORKSHEET", "rss_media"),
+            email_formats_spreadsheet_id=email_formats_spreadsheet_id,
+            email_formats_worksheet_gid=max(0, _env_int("EMAIL_FORMATS_WORKSHEET_GID", 0)),
             openai_api_key=_env_required("OPENAI_API_KEY"),
             openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             apollo_api_key=_env_required("APOLLO_API_KEY"),

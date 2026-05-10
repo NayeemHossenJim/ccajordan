@@ -15,6 +15,11 @@ This project implements the workflow defined in ccajordan.txt using Python as th
     - youtube_profile
   - RSS sheet with field:
     - feed_url
+- Loads creator-specific outreach templates from a Google Sheet block format:
+  - Creator name row
+  - `Subject, Copy` header row
+  - One or more template rows per creator
+  - Uses the best matching template for a lead when keywords match; otherwise falls back to AI drafting
 - Runs the exact sequence:
   - For each creator, iterate every RSS feed URL.
   - Fetch RSS XML, extract article links, and pull article content for lead enrichment.
@@ -62,6 +67,7 @@ pip install -r requirements.txt
 - Copy .env.example to .env
 - Fill all required variables.
 - Ensure Google service account has access to the target spreadsheet.
+- If templates are in a separate spreadsheet, set `EMAIL_FORMATS_SPREADSHEET_ID` and `EMAIL_FORMATS_WORKSHEET_GID`.
 
 1. Run once from CLI
 

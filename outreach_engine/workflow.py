@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 from .apollo_client import ApolloClient
 from .config import Settings
 from .email_generator import EmailGenerator
-from .models import Creator, Lead, SMTPAccount
+from .models import Creator, CreatorEmailTemplate, Lead, SMTPAccount
 from .niche_matcher import NicheMatcher
 from .rss_parser import RSSParser
 from .sheets_loader import SheetsLoader
@@ -44,7 +44,12 @@ class OutreachWorkflow:
             search_contact_email_statuses=settings.apollo_search_contact_email_statuses,
             allowed_email_statuses=settings.apollo_allowed_email_statuses,
         )
-        self._email = EmailGenerator(api_key=settings.openai_api_key, model=settings.openai_model)
+        self._creator_templates: Dict[str, List[CreatorEmailTemplate]] = {}
+        self._email = EmailGenerator(
+            api_key=settings.openai_api_key,
+            model=settings.openai_model,
+            default_sender_first_name=self._derive_sender_first_name(settings.smtp_from_email),
+        )
         self._smtp_accounts = self._build_accounts(settings.smtp_accounts)
         self._approver = SlackApprover(
             bot_token=settings.slack_bot_token,
@@ -68,7 +73,13 @@ class OutreachWorkflow:
         try:
             creators = self._sheets.load_creators()
             feeds = self._sheets.load_rss_feeds()
-            self._state.update_run(run_id, "running", f"Loaded {len(creators)} creators and {len(feeds)} feeds")
+            self._creator_templates = self._sheets.load_creator_email_templates()
+            template_count = sum(len(items) for items in self._creator_templates.values())
+            self._state.update_run(
+                run_id,
+                "running",
+                f"Loaded {len(creators)} creators, {len(feeds)} feeds, and {template_count} creator templates",
+            )
             self._execute_loop(run_id, creators, feeds, metrics)
             self._state.set_json(f"run_metrics:{run_id}", metrics)
             summary = self._metrics_summary(metrics)
@@ -258,7 +269,13 @@ class OutreachWorkflow:
 
         # Step 5: Draft and approve email
         logger.info("📧 Drafting email for %s", contact.email)
-        draft = self._email.draft_email(creator=creator, lead=lead, contact=contact)
+        creator_templates = self._creator_templates.get(self._sheets.normalize_creator_key(creator.creator_name), [])
+        draft = self._email.draft_email(
+            creator=creator,
+            lead=lead,
+            contact=contact,
+            templates=creator_templates,
+        )
         approval_result = self._approver.review_until_approved(
             draft=draft,
             context=ApprovalContext(creator=creator, lead=lead, contact=contact),
@@ -400,6 +417,12 @@ class OutreachWorkflow:
         except Exception as exc:
             logger.warning("Failed to parse RSS feed %s: %s", feed_url, exc)
             return []
+
+    @staticmethod
+    def _derive_sender_first_name(from_email: str) -> str:
+        local = (from_email or "").split("@", 1)[0]
+        parts = re.findall(r"[A-Za-z]+", local)
+        return parts[0].capitalize() if parts else "Team"
 
     @property
     def state_store(self) -> StateStore:
